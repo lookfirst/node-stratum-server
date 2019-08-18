@@ -4,7 +4,7 @@ const util = require('./util.js');
 
 const watermark = '/Eru Ilúvatar/'
 const emptyCommitment = "6a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf9";
-const donateScript = Buffer.from("a914bb3310cb575409b04b7de1cb0c6ad28762078e6887", "hex");
+const donateScript = util.addressToScript("3JkqTWuAU7oTG8Szzfmryzm6qrfAgY2HLe");
 
 const diff1 = BigInt('0x00000000ffff0000000000000000000000000000000000000000000000000000');
 
@@ -304,12 +304,13 @@ class Template {
 
         for (let i = 0; i < recipients.length; ++i) {
             let recipientReward = Math.floor(recipients[i].percent * reward);
+            let recipientScript = util.addressToScript(recipients[i].address);
             rewardToPool -= recipientReward;
 
             txOutputBuffers.push(Buffer.concat([
                 util.packInt64LE(recipientReward),
-                util.varIntBuffer(recipients[i].script.length),
-                recipients[i].script
+                util.varIntBuffer(recipientScript.length),
+                recipientScript
             ]));
         }
 

@@ -6,4 +6,4 @@ Suitable for solo mining, just don't forget to replace the payment script with y
 ## Dependencies
 
 Works fine with NodeJS v12.8.0.
-You will need a bigint-buffer module as well.
+You will need bs58 and bigint-buffer modules as well.

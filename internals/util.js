@@ -2,16 +2,17 @@
 
 const crypto = require('crypto');
 const bb = require('bigint-buffer');
+const base58 = require('bs58');
 
 exports.randomBytes = crypto.randomBytes;
 
-exports.sha256 = function(buffer){
+exports.sha256 = function (buffer) {
     let hash1 = crypto.createHash('sha256');
     hash1.update(buffer);
     return hash1.digest();
 };
 
-exports.sha256d = function(buffer){
+exports.sha256d = function (buffer) {
     return exports.sha256(exports.sha256(buffer));
 };
 
@@ -65,46 +66,46 @@ exports.serializeString = function (s) {
         ]);
 };
 
-exports.packUInt16LE = function(num){
+exports.packUInt16LE = function (num) {
     let buff = Buffer.alloc(2);
     buff.writeUInt16LE(num, 0);
     return buff;
 };
 
-exports.packUInt16BE = function(num){
+exports.packUInt16BE = function (num) {
     let buff = Buffer.alloc(2);
     buff.writeUInt16BE(num, 0);
     return buff;
 }
 
-exports.packInt32LE = function(num){
+exports.packInt32LE = function (num) {
     let buff = Buffer.alloc(4);
     buff.writeInt32LE(num, 0);
     return buff;
 };
-exports.packInt32BE = function(num){
+exports.packInt32BE = function (num) {
     let buff = Buffer.alloc(4);
     buff.writeInt32BE(num, 0);
     return buff;
 };
-exports.packUInt32LE = function(num){
+exports.packUInt32LE = function (num) {
     let buff = Buffer.alloc(4);
     buff.writeUInt32LE(num, 0);
     return buff;
 };
-exports.packUInt32BE = function(num){
+exports.packUInt32BE = function (num) {
     let buff = Buffer.alloc(4);
     buff.writeUInt32BE(num, 0);
     return buff;
 };
-exports.packInt64LE = function(num){
+exports.packInt64LE = function (num) {
     let buff = Buffer.alloc(8);
     buff.writeUInt32LE(num % Math.pow(2, 32), 0);
     buff.writeUInt32LE(Math.floor(num / Math.pow(2, 32)), 4);
     return buff;
 };
 
-exports.varIntBuffer = function(n){
+exports.varIntBuffer = function (n) {
     /*
      * Defined in bitcoin protocol here:
      * https://en.bitcoin.it/wiki/Protocol_specification#Variable_length_integer
@@ -112,19 +113,19 @@ exports.varIntBuffer = function(n){
 
     if (n < 0xfd)
         return Buffer.from([n]);
-    else if (n <= 0xffff){
+    else if (n <= 0xffff) {
         let buff = Buffer.alloc(3);
         buff[0] = 0xfd;
         buff.writeUInt16LE(n, 1);
         return buff;
     }
-    else if (n <= 0xffffffff){
+    else if (n <= 0xffffffff) {
         let buff = Buffer.alloc(5);
         buff[0] = 0xfe;
         buff.writeUInt32LE(n, 1);
         return buff;
     }
-    else{
+    else {
         let buff = Buffer.alloc(9);
         buff[0] = 0xff;
         exports.packUInt16LE(n).copy(buff, 1);
@@ -132,7 +133,7 @@ exports.varIntBuffer = function(n){
     }
 };
 
-exports.varStringBuffer = function(string){
+exports.varStringBuffer = function (string) {
     let strBuff = Buffer.from(string);
     return Buffer.concat([exports.varIntBuffer(strBuff.length), strBuff]);
 };
@@ -141,44 +142,44 @@ exports.varStringBuffer = function(string){
 An exact copy of python's range feature. Written by Tadeck:
  http://stackoverflow.com/a/8273091
  */
-exports.range = function(start, stop, step){
-    if (typeof stop === 'undefined'){
+exports.range = function (start, stop, step) {
+    if (typeof stop === 'undefined') {
         stop = start;
         start = 0;
     }
-    if (typeof step === 'undefined'){
+    if (typeof step === 'undefined') {
         step = 1;
     }
-    if ((step > 0 && start >= stop) || (step < 0 && start <= stop)){
+    if ((step > 0 && start >= stop) || (step < 0 && start <= stop)) {
         return [];
     }
     let result = [];
-    for (let i = start; step > 0 ? i < stop : i > stop; i += step){
+    for (let i = start; step > 0 ? i < stop : i > stop; i += step) {
         result.push(i);
     }
     return result;
 };
 
-exports.revertBuffer = function(buf) {
+exports.revertBuffer = function (buf) {
     return Buffer.from(buf).reverse();
 };
 
-exports.revertByteOrder = function(buff){
+exports.revertByteOrder = function (buff) {
     for (let i = 0; i < 8; ++i)
         buff.writeUInt32LE(buff.readUInt32BE(i * 4), i * 4);
     return exports.revertBuffer(buff);
 };
 
-exports.revertBuffers = function(buffers) {
+exports.revertBuffers = function (buffers) {
     return buffers.map(buf => exports.revertBuffer(buf));
 };
 
-exports.revertHex = function(hex) {
+exports.revertHex = function (hex) {
     return Buffer.from(hex, 'hex').reverse().toString('hex');
 }
 
 // https://en.bitcoin.it/wiki/Difficulty#How_is_difficulty_stored_in_blocks.3F
-exports.bignumFromBitsHex = function(bitsHex){
+exports.bignumFromBitsHex = function (bitsHex) {
     let numBytes = BigInt('0x' + bitsHex.slice(0, 2));
     let bigBits = BigInt('0x' + bitsHex.slice(2));
 
@@ -187,7 +188,35 @@ exports.bignumFromBitsHex = function(bitsHex){
 
 exports.toBigIntLE = bb.toBigIntLE;
 
-exports.toBigIntHex = function(hex) {
+exports.toBigIntHex = function (hex) {
     return bb.toBigIntBE(Buffer.from(hex, 'hex'));
 }
 
+exports.addressToScript = function (addr) {
+    const buffer = Buffer.from(base58.decode(addr));
+
+    if (buffer[0] != 0x05) {
+        throw addr + ' is not a P2SH address';
+    }
+
+    let hash160 = buffer.slice(1, -4);
+    let checksum = buffer.slice(-4);
+
+    let data = buffer.slice(0, -4);
+    let hash = exports.sha256d(data);
+
+    checksum.forEach((check, index) => {
+        if (check !== hash[index]) {
+            throw 'Invalid checksum';
+        }
+    });
+
+    let script = Buffer.alloc(23);
+
+    script[0] = 0xa9;
+    script[1] = 0x14;
+    hash160.copy(script, 2);
+    script[22] = 0x87;
+
+    return script;
+}
