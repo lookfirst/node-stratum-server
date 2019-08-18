@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const primitives = require('./internals/primitives');
+const { Template } = require('./internals/primitives');
 const Upstream = require('./internals/upstream');
 const { fork } = require('child_process');
 
@@ -14,10 +14,10 @@ function timestamp() {
 
 clients.on('message', msg => {
     if (msg.what == 'share' || msg.what == 'block') {
-        let { haystack, recipients, difficulty } = msg.data;
+        let { haystack, difficulty } = msg.data;
         let [user, extraNonce1, extraNonce2, time, nonce] = msg.data.needle;
 
-        let template = new primitives.Template(haystack, recipients);
+        let template = new Template(haystack);
         let coinbase = template.serializeCoinbase(extraNonce1, extraNonce2);
         let block = template.serializeBlock(coinbase, time, nonce);
 
@@ -33,11 +33,11 @@ clients.on('message', msg => {
 });
 
 upstream.getTemplate().then(tpl => {
-    clients.send({ sender: process.pid, what: 'newjob', data: tpl.full });
+    clients.send({ sender: process.pid, what: 'newjob', data: tpl });
 
     let lp_wait = function(longpollid) {
         upstream.longPoll(longpollid).then(lp => {
-            clients.send({ sender: process.pid, what: 'newjob', data: lp.full});
+            clients.send({ sender: process.pid, what: 'newjob', data: lp});
             console.log(timestamp(), 'longpollid', lp.longpollid);
             lp_wait(lp.longpollid);
         });

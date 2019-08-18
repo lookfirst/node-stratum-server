@@ -3,7 +3,7 @@
 const net = require('net');
 
 const util = require('./util.js');
-const { diff1, Template}  = require('./primitives.js');
+const { diff1, Template } = require('./primitives.js');
 
 class Counter {
     #seed = null;
@@ -13,7 +13,7 @@ class Counter {
         this.#seed = [util.randomBytes(8), util.packInt64LE(process.pid)];
     }
 
-    next(len=16) {
+    next(len = 16) {
         let hash = util.sha256d(Buffer.concat([
             this.#seed[0],
             this.#seed[1],
@@ -35,7 +35,6 @@ class StratumServer {
         this.#server = net.createServer(this.handleConnection);
         this.#server.miners = {};
         this.#server.port = options.port;
-        this.#server.recipients = options.recipients;
         this.#server.counter = new Counter();
         this.#server.extraNonce1Len = options.extraNonce1Len;
         this.#server.extraNonce2Len = Template.extraNonceLen - options.extraNonce1Len;
@@ -59,37 +58,32 @@ class StratumServer {
         }
     }
 
-    push(data) {
-        let cleanjobs = this.#templates.length && (this.#templates[this.#templates.length - 1].template.previousblockhash != data.previousblockhash);
+    pushJob(data, recipients) {
+        let cleanjobs = this.#templates.length && 
+            (this.#templates[this.#templates.length - 1].template.previousblockhash != data.previousblockhash);
+
         if (cleanjobs) {
             this.#templates.length = 0;
         }
-        this.#templates.push({
-            jobid: this.#server.counter.next(4),
-            recipients: this.#server.recipients,
-            template: new Template(data, this.#server.recipients)
-        });
-        this.broadcast(cleanjobs);
+
+        let jobid = this.#server.counter.next(4);
+        let template = new Template(data, recipients);
+        this.#templates.push({ jobid: jobid, template: template });
+
+        if (this.#server.miners.length != 0) {
+            let job = template.getJobParams(jobid, cleanjobs);
+            console.log('Worker', process.pid, 'is broadcasting job', jobid, 'to', Object.values(this.#server.miners).length, 'miners');
+            Object.values(this.#server.miners).forEach(miner => {
+                if (miner.authorized) {
+                    // Broadcast jobs to authorized miners
+                    StratumServer.notify(miner, 'mining.notify', job);
+                }
+            });
+        }
     }
 
-    broadcast(cleanjobs = false) {
-        let count = Object.values(this.#server.miners).length;
-        if (!count) return;
-
-        let {jobid, template} = this.#templates[this.#templates.length - 1];
-        let job = template.getJobParams(jobid, cleanjobs);
-        console.log('Worker', process.pid, 'is broadcasting job', jobid, 'to', Object.values(this.#server.miners).length, 'miners');
-
-        Object.values(this.#server.miners).forEach(miner => {
-            if (miner.authorized) {
-                // Broadcast jobs to authorized miners
-                StratumServer.notify(miner, 'mining.notify', job);
-            }
-        });
-    }
-
-    sendjob(miner, cleanjobs=false) {
-        let {jobid, template} = this.#templates[this.#templates.length - 1];
+    sendjob(miner, cleanjobs = false) {
+        let { jobid, template } = this.#templates[this.#templates.length - 1];
         let job = template.getJobParams(jobid, cleanjobs);
         StratumServer.notify(miner, 'mining.notify', job);
     }
@@ -123,7 +117,7 @@ class StratumServer {
                 let [user, password] = message.params;
                 miner.authorized = true;
                 StratumServer.reply(miner, message.id, null, true);
-                StratumServer.notify(miner, 'mining.set_difficulty', [ Number(diff1 / this.#shareTarget) ]);
+                StratumServer.notify(miner, 'mining.set_difficulty', [Number(diff1 / this.#shareTarget)]);
                 if (this.#templates.length) {
                     miner.server.stratum.sendjob(miner, true);
                 }
@@ -149,11 +143,26 @@ class StratumServer {
 
                 if (this.#shareTarget >= header.hashVal) {
                     let what = job.template.target >= header.hashVal ? 'block' : 'share';
-                    process.send({ sender: process.pid, what: what, data: {haystack: job.template.full, recipients: job.recipients, difficulty: Number(diff1 / header.hashVal), needle: [user, miner.extraNonce1, extraNonce2, time, nonce]} });
+                    let msg = {
+                        sender: process.pid,
+                        what: what,
+                        data: {
+                            haystack: job.template.full,
+                            difficulty: Number(diff1 / header.hashVal),
+                            needle: [
+                                user,
+                                miner.extraNonce1,
+                                extraNonce2,
+                                time,
+                                nonce
+                            ]
+                        }
+                    };
+                    process.send(msg);
                 } else {
                     return StratumServer.reply(miner, message.id, 'high-hash', null);
                 }
-                
+
                 StratumServer.reply(miner, message.id, null, true);
             }; break;
             default:

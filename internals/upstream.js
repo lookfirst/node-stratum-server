@@ -1,15 +1,14 @@
 'use strict';
 const rpcApi = require('./jsonrpc.js');
 
-const RpcConf = require('../config.js').RpcConf;
-const primitives = require('./primitives');
+const { RpcConf } = require('../config.js');
 const util = require('./util');
 
 class Upstream {
     #client = null;
 
     constructor() {
-        this.#client = new rpcApi(new RpcConf);
+        this.#client = new rpcApi(RpcConf);
     }
 
     getTemplate() {
@@ -19,8 +18,7 @@ class Upstream {
                 params: [{rules: ["segwit"]}]
             }, (error, data) => {
                 if (error) return reject(error);
-                let tpl = new primitives.Template(data.result, {});
-                return resolve(tpl);
+                return resolve(data.result);
             });
         });
     }
@@ -32,8 +30,7 @@ class Upstream {
                 params: [{rules: ["segwit"], longpollid: lpId}]
             }, (error, data) => {
                 if (error) return reject(error);
-                let tpl = new primitives.Template(data.result, {});
-                return resolve(tpl);
+                return resolve(data.result);
             });
         });
     }

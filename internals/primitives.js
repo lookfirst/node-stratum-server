@@ -85,10 +85,9 @@ class Template {
     #target = 0n;
     #data = [];
     #hashes = [];
+    #recipients = {};
 
-    #constructor2 = (data, recipients) => {
-        // Sanity checks
-        if (!recipients) throw 'Recipients list is not available';
+    #constructor1 = (data) => {
         this.#version = data.version;
         this.#previousblockhash = data.previousblockhash;
         this.#flags = data.flags;
@@ -98,6 +97,7 @@ class Template {
         this.#bits = data.bits;
         this.#height = data.height;
         this.#witness_commitment = data.witness_commitment;
+        this.#recipients = data.recipients;
 
         if (!data.hashes.length) {
             this.#hashes = [];
@@ -109,7 +109,7 @@ class Template {
             this.#merkleTree = new MerkleTree([null].concat(util.revertBuffers(this.#hashes)));
         }
 
-        [this.#gen1, this.#gen2] = Template.createGenTx(this, recipients);
+        [this.#gen1, this.#gen2] = Template.createGenTx(this, data.recipients);
     }
 
     #constructor3 = (tpl, recipients, empty) => {
@@ -124,6 +124,7 @@ class Template {
         this.#bits = tpl.bits;
         this.#height = tpl.height;
         this.#longpollid = tpl.longpollid;
+        this.#recipients = recipients;
 
         if (empty || !tpl.transactions.length || !tpl.default_witness_commitment) {
             // Calculate coinbase reward at current height
@@ -149,19 +150,23 @@ class Template {
             this.#merkleTree = new MerkleTree([null].concat(util.revertBuffers(this.#hashes)));
         }
 
-        [this.#gen1, this.#gen2] = Template.createGenTx(this, recipients);
+        [this.#gen1, this.#gen2] = Template.createGenTx(this, this.#recipients);
     };
 
     constructor() {
         if ('hashes' in arguments[0])
-            return this.#constructor2.apply(this, arguments);
+            return this.#constructor1.apply(this, arguments);
         this.#constructor3.apply(this, arguments);
 
-        this.#constructor3 = this.#constructor2 = () => { throw 'Don\'t call me'; };
+        this.#constructor3 = this.#constructor1 = () => { throw 'Don\'t call me'; };
     }
 
     static get extraNonceLen() {
         return 8; 
+    }
+
+    get coinbasevalue() {
+        return this.#coinbasevalue;
     }
 
     get curtime() {
@@ -193,6 +198,7 @@ class Template {
             version: this.#version,
             previousblockhash: this.#previousblockhash,
             coinbasevalue: this.#coinbasevalue,
+            recipients: this.#recipients,
             flags: this.#flags,
             curtime: this.#curtime,
             bits: this.#bits,
@@ -208,6 +214,7 @@ class Template {
             version: this.#version,
             previousblockhash: this.#previousblockhash,
             coinbasevalue: this.#coinbasevalue,
+            recipients: this.#recipients,
             flags: this.#flags,
             curtime: this.#curtime,
             bits: this.#bits,
