@@ -12,9 +12,8 @@ class Client {
     #user = null;
     #password = null;
     #host = '127.0.0.1';
-    #port = 8080;
+    #port = 8332;
     #agent = http;
-    #method = "POST";
     #path = '/';
 
     #authData = null;
@@ -25,11 +24,10 @@ class Client {
         if ('user' in options) this.#user = options.user;
         if ('password' in options) this.#password = options.password;
         if ('host' in options) this.#host = options.host;
-        if ('method' in options) this.#method = options.method;
         if ('path' in options) this.#path = options.path;
+        if ('port' in options && !isNaN(options.port)) this.#port = options.port;
 
         this.#agent = (this.#protocol === 'https') ?https: http;
-        this.#port = ('port' in options) ? options.port : ((this.#protocol === 'https') ?8443 : 8080);
 
         if (this.#user && this.#password) {
             this.#authNeeded = true;
@@ -37,80 +35,49 @@ class Client {
         }
     }
 
-    call(options, callback, id) {
-        let requestData = null;
-
-        if (Array.isArray(options)) requestData = options.map(req => Client.parse(req));
-        if (!Array.isArray(options)) requestData = Client.parse(options);
-
+    call(options, callback) {
+        let requestData = Array.isArray(options) ? options.map(req => Client.parse(req)) : Client.parse(options);
         requestData = JSON.stringify(requestData);
-        if (this.#method == 'GET') {
-            requestData = require('querystring').escape(requestData);
-        }
         let requestOptions = {
             agent: this.#agent.globalAgent,
-            method: this.#method,
+            method: 'POST',
             host: this.#host,
             port: this.#port,
             path: this.#path,
             headers: {
-                'content-type': (this.#method == 'POST') ?'application/x-www-form-urlencoded': 'application/json',
+                'content-type': 'application/x-www-form-urlencoded',
                 'content-length': (requestData).length
             }
         };
 
         if(this.#authNeeded) requestOptions.auth = this.#authData;
-        if(this.#method == 'GET') requestOptions.path = requestOptions.path + requestData;
 
         let request = this.#agent.request(requestOptions);
-        request.on('error', error => {
-            callback('error:', error);
-        });
+        request.on('error', error => callback('error:', error));
         request.on('response', response => {
             let buffer = '';
-            response.on('data', bytes => {
-                buffer += bytes;
-            });
+            response.on('data', bytes => buffer += bytes );
 
             response.on('end', () => {
-                let error, result;
-                let data = buffer;
+                let error = null, result = null, data = buffer;
 
-                switch (response.statusCode) {
-                    case 400: {
-                        error = new Error('Connection Accepted but error : 400 Bad request Unauthorized - ' + data);
-                        callback(error, data);
-                    }; break;
-                    case 401: {
-                        error = new Error('Connection Rejected : 401 Unauthorized');
-                    }; break;
-                    case 403: {
-                        error = new Error('Connection Rejected : 403 Forbidden');
-                    }; break;
-                    case 500: {
-                        try {
-                            let tmp = JSON.parse(data);
-                            error = tmp.error.message;
-                        } catch(e) {
-                            error = new Error('Connection Rejected : 500 Internal server error');
-                        }
-                    }; break;
-                    case 200: case 300: {
-                        if (data.length > 0) {
-                            try {
-                                result = JSON.parse(data);
-                            } catch (err) {
-                                error = new Error('Connection Accepted but error JSON :' + err);
-                            }
-                        }
-                    }; break;
-
-                    default: {
-                        error = new Error('Connection Rejected : Unhandled status code ' + response.statusCode + '');
+                if (data.length > 0) {
+                    try {
+                        result = JSON.parse(data);
+                    } catch (err) {
+                        error = new Error('JSON deserialize error' + err);
                     }
                 }
 
-                callback(error, result);
+                if (response.statusCode == 200 || response.statusCode == 300) {
+                    return callback(error, result);
+                }
+
+                if (result && 'error' in result) {
+                    return callback(new Error(result.error.message), result);
+                }
+
+                callback(new Error(Client.status(response.statusCode)), result);
             });
         });
 
@@ -118,30 +85,35 @@ class Client {
     }
 
     static parse(options) {
-        let requestData = {};
+        let {id, jsonrpc, method, params} = options;
 
-        let id = getRandomId(), params = [], method = '', jsonrpc = '2.0';
-        if (options) {
-            if (options.hasOwnProperty('method')) {
-                method = options.method;
-            }
-            if (options.hasOwnProperty('params')) {
-                params = options.params;
-            }
-            if (options.hasOwnProperty('jsonrpc')) {
-                jsonrpc = options.jsonrpc;
-            }
-            if (options.hasOwnProperty('id')) {
-                id = options.id;
-            }
+        if (!method) {
+            throw 'You didn\'t provide method name';
         }
 
-        requestData.id = id;
-        requestData.method = method;
-        requestData.params = params;
-        requestData.jsonrpc = jsonrpc;
+        return { method: method, params: (params || []), jsonrpc: (jsonrpc || '2.0'), id: (id || getRandomId()) };
+    }
 
-        return requestData;
+    static status(code) {
+        let codes = {
+            200: '200 OK',
+            300: '300 Multiple Choices',
+            400: '400 Bad request',
+            401: '401 Unauthorized',
+            403: '403 Forbidden',
+            404: '404 Not Found',
+            405: '405 Method Not Allowed',
+            407: '407 Proxy Authentication Required',
+            408: '408 Request Timeout',
+            451: '451 Unavailable For Legal Reasons',
+            500: '500 Internal server error',
+            501: '501 Not Implemented',
+            502: '502 Bad Gateway',
+            503: '503 Service Unavailable',
+            504: '504 Gateway Timeout'
+        };
+
+        return (code in codes) ? codes['code'] : 'Unhandled status code ' + code;
     }
 }
 
